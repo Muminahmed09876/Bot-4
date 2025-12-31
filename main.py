@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import os
-from dotenv import load_dotenv
 import re
 import aiohttp
 import asyncio
@@ -22,7 +21,7 @@ import time
 import math
 import logging
 import yt_dlp
-load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

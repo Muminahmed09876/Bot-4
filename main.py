@@ -21,7 +21,6 @@ import time
 import math
 import logging
 import yt_dlp
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -893,7 +892,20 @@ async def text_handler(c, m: Message):
                     except: pass
                     BATCH_STATUS_MSG.pop(uid, None)
                 
-                await m.reply_text("Batch processing complete.")
+                # মেসেজ পাঠানো
+                complete_msg = await m.reply_text("Batch processing complete.")
+                
+                # সরাসরি অপেক্ষা করে ডিলিট করা
+                async def auto_delete():
+                    await asyncio.sleep(5) # ৫ সেকেন্ড অপেক্ষা
+                    try:
+                        await complete_msg.delete()
+                    except:
+                        pass
+                
+                # এটি টাস্ক হিসেবে রান করুন
+                asyncio.ensure_future(auto_delete())
+                
             else:
                 await m.reply_text("Batch list is empty or mode is not ON.")
             return
@@ -1394,9 +1406,11 @@ async def forwarded_file_or_direct_file(c: Client, m: Message):
         # --- NEW BATCH LOGIC ---
         if uid in BATCH_CAPTION_MODE:
             file_info = m.video or m.document
-            if not file_info: return
+            if not file_info: 
+                return
             
-            if uid not in BATCH_DATA: BATCH_DATA[uid] = []
+            if uid not in BATCH_DATA: 
+                BATCH_DATA[uid] = []
             
             # Save relevant data. We store the message object to reply to/extract data from later
             BATCH_DATA[uid].append({
@@ -1410,14 +1424,33 @@ async def forwarded_file_or_direct_file(c: Client, m: Message):
             # Update or Send Status Message
             if uid in BATCH_STATUS_MSG:
                 try:
+                    # মেসেজ এডিট হলে সেটি অটো ডিলিট করা কঠিন, তাই আমরা আগেরটি ডিলিট করে নতুন পাঠাতে পারি
+                    # অথবা সরাসরি এডিট করতে পারেন:
                     await c.edit_message_text(m.chat.id, BATCH_STATUS_MSG[uid], status_text)
                 except Exception:
                     # If edit fails (e.g. deleted), send new
                     msg = await m.reply_text(status_text)
                     BATCH_STATUS_MSG[uid] = msg.id
+                    
+                    # ১৫ সেকেন্ড পর ডিলিট করার লজিক
+                    await asyncio.sleep(15)
+                    try:
+                        await msg.delete()
+                    except:
+                        pass
             else:
                 msg = await m.reply_text(status_text)
                 BATCH_STATUS_MSG[uid] = msg.id
+                
+                # ১৫ সেকেন্ড পর ডিলিট করার লজিক
+                await asyncio.sleep(15)
+                try:
+                    await msg.delete()
+                    # ডিলিট হয়ে গেলে ডিকশনারি থেকে আইডি মুছে ফেলা ভালো
+                    if uid in BATCH_STATUS_MSG:
+                        del BATCH_STATUS_MSG[uid]
+                except:
+                    pass
             return
         # ------------------------
 

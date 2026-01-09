@@ -44,6 +44,8 @@ USER_CAPTIONS = {}
 USER_COUNTERS = {}
 EDIT_CAPTION_MODE = set()
 USER_THUMB_TIME = {}
+# সাময়িক ইমেইল জমা রাখার জন্য নতুন ডিকশনারি
+USER_TEMP_EMAILS = {}
 
 # --- STATE FOR AUDIO CHANGE ---
 MKV_AUDIO_CHANGE_MODE = set()
@@ -407,6 +409,8 @@ async def set_bot_commands():
         BotCommand("mkv_video_audio_change", "MKV ভিডিওর অডিও ট্র্যাক পরিবর্তন (admin only)"),
         BotCommand("create_post", "নতুন পোস্ট তৈরি করুন (admin only)"), 
         BotCommand("mode_check", "বর্তমান মোড স্ট্যাটাস চেক করুন (admin only)"), 
+        BotCommand("gen", "৬টি সাময়িক ইমেইল তৈরি করুন"),
+        BotCommand("check", "ইমেইল ইনবক্স চেক করুন"),
         BotCommand("broadcast", "ব্রডকাস্ট (কেবল অ্যাডমিন)"),
         BotCommand("help", "সহায়িকা")
     ]
@@ -593,6 +597,61 @@ async def photo_handler(c, m: Message):
     if not is_admin(m.from_user.id):
         return
     uid = m.from_user.id
+
+    # /gen কমান্ড: ৬টি নতুন ইমেইল তৈরি করবে এবং আগেরগুলো মুছে ফেলবে
+@app.on_message(filters.command("gen") & filters.private)
+async def gen_temp_emails(c, m: Message):
+    if not is_admin(m.from_user.id): return
+    uid = m.from_user.id
+    
+    # API থেকে ৬টি ইমেইল নেওয়া
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://www.1secmail.com/api/v1/?action=genAddrs&count=6") as resp:
+            new_emails = await resp.json()
+    
+    # আগের ইমেইল ডিলিট করে নতুনগুলো সেভ করা
+    USER_TEMP_EMAILS[uid] = new_emails
+    
+    text = "📧 **আপনার নতুন ৬টি সাময়িক ইমেইল:**\n\n"
+    for i, email in enumerate(new_emails, 1):
+        text += f"{i}. `{email}`\n"
+    text += "\n⚠️ নতুন করে /gen দিলে এই ইমেইলগুলো আর কাজ করবে না।\n📥 চেক করতে: `/check [email]`"
+    
+    await m.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+# /check কমান্ড: নির্দিষ্ট ইমেইলের ইনবক্স চেক করবে
+@app.on_message(filters.command("check") & filters.private)
+async def check_temp_email(c, m: Message):
+    if not is_admin(m.from_user.id): return
+    uid = m.from_user.id
+    
+    try:
+        input_email = m.text.split()[1]
+        
+        # ইমেইলটি বর্তমান লিস্টে আছে কি না যাচাই
+        if uid not in USER_TEMP_EMAILS or input_email not in USER_TEMP_EMAILS[uid]:
+            await m.reply_text("❌ এই ইমেইলটি এখন আর সচল নেই। নতুন করে /gen দিন।")
+            return
+
+        user, domain = input_email.split('@')
+        url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={user}&domain={domain}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                msgs = await resp.json()
+        
+        if not msgs:
+            await m.reply_text("📭 ইনবক্স খালি।")
+        else:
+            for msg in msgs:
+                content_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={user}&domain={domain}&id={msg['id']}"
+                async with session.get(content_url) as resp2:
+                    content = await resp2.json()
+                
+                output = f"📩 **নতুন মেইল!**\n\n**থেকে:** {msg['from']}\n**বিষয়:** {msg['subject']}\n\n**বার্তা:**\n{content['textBody']}"
+                await m.reply_text(output)
+    except Exception:
+        await m.reply_text("❗ সঠিক ফরম্যাট: `/check example@1secmail.com`")
     
     # --- NEW: Handle Create Post Mode ---
     if uid in CREATE_POST_MODE and uid in POST_CREATION_STATE and POST_CREATION_STATE[uid]['state'] == 'awaiting_image':

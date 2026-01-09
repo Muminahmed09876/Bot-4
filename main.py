@@ -2222,6 +2222,11 @@ async def periodic_cleanup():
             pass
         await asyncio.sleep(3600)
 
+# --- ২. ইমেইল জেনারেশন ফাংশন (/gen) ---
+@app.on_message(filters.command("gen") & filters.private)
+async def gen_temp_emails(c, m: Message):
+    uid = m.from_user.id
+
 if __name__ == "__main__":
     print("Bot চালু হচ্ছে... Flask and Ping threads start করা হচ্ছে, তারপর Pyrogram চালু হবে।")
     t = threading.Thread(target=run_flask_and_ping, daemon=True)

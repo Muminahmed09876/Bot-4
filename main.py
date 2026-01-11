@@ -1091,22 +1091,7 @@ async def handle_url_download_and_upload(c: Client, m: Message, url: str):
         # but to be safe and responsive, send a temp message
         status_msg = await m.reply_text("Searching formats...", reply_markup=progress_keyboard())
 
-        # UPGRADED YTDL OPTIONS to fix "Sign in" and mimic browser
-        ydl_opts = {
-            'noplaylist': True, 
-            'quiet': True,
-            'no_warnings': True,
-            # Fix for "Sign in": Use cookies if available
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            # User Agent Spoofing (Generic Android/Chrome)
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-            },
-            'nocheckcertificate': True,
-        }
-
+        ydl_opts = {'noplaylist': True, 'quiet': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
                 info = await asyncio.to_thread(ydl.extract_info, url, download=False)
@@ -1116,7 +1101,7 @@ async def handle_url_download_and_upload(c: Client, m: Message, url: str):
                      await download_and_process_generic(c, m, url, status_msg)
                      return
                 else:
-                     await status_msg.edit(f"URL Extract Error: {e}\n\nHint: Try uploading a 'cookies.txt' file to the bot root.")
+                     await status_msg.edit(f"URL Extract Error: {e}")
                      return
 
         formats = info.get('formats', [])
@@ -1130,8 +1115,8 @@ async def handle_url_download_and_upload(c: Client, m: Message, url: str):
         buttons = []
         # Best Quality
         key_best = f"ytdl_{uid}_best"
-        YT_DATA[key_best] = {'url': url, 'format_id': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', 'info': info, 'msg_id': status_msg.id}
-        buttons.append([InlineKeyboardButton(f"Best Quality (Auto)", callback_data=key_best)])
+        YT_DATA[key_best] = {'url': url, 'format_id': 'bestvideo+bestaudio/best', 'info': info, 'msg_id': status_msg.id}
+        buttons.append([InlineKeyboardButton(f"Best Quality", callback_data=key_best)])
 
         seen_res = set()
         for f in valid_formats:
@@ -1143,12 +1128,6 @@ async def handle_url_download_and_upload(c: Client, m: Message, url: str):
             
             ext = f.get('ext', 'mp4')
             key = f"ytdl_{uid}_{f['format_id']}"
-            
-            # Mimic Termux logic: construct format string for specific res
-            # format_str = f'bestvideo[height<={res}][ext=mp4]+bestaudio[ext=m4a]/best[height<={res}][ext=mp4]/best'
-            # We save just the format_id for simplicity, but we can enhance in callback if needed.
-            # However, YTDL's extracted format_id is usually sufficient.
-            
             YT_DATA[key] = {'url': url, 'format_id': f['format_id'], 'info': info, 'msg_id': status_msg.id}
             
             # Button text without size as requested
@@ -1213,12 +1192,6 @@ async def ytdl_callback(c: Client, cb: CallbackQuery):
                 'outtmpl': out_tmpl,
                 'quiet': True,
                 'noplaylist': True,
-                # Added from Termux Code
-                'concurrent_fragment_downloads': 4,
-                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-                'http_headers': {
-                     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                },
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -1227,29 +1200,20 @@ async def ytdl_callback(c: Client, cb: CallbackQuery):
             }
         else:
             out_tmpl = str(TMP / f"dl_{uid}_{timestamp}.%(ext)s")
+            # Force merge with best audio if not 'best' generic
+            # data['format_id'] is usually just the video stream ID (e.g. '137')
+            # We want '137+bestaudio' to ensure audio presence
             
-            # Enhancing format selection based on Termux code logic if it's 'best'
             final_fmt = fmt
-            if fmt == 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best':
-                pass # Use as is
-            elif '+' not in fmt and fmt != 'best':
-                 # If user picked specific format ID (e.g. '137'), ensure audio is merged
-                 final_fmt = f"{fmt}+bestaudio[ext=m4a]/bestaudio/best"
-
+            if fmt != 'bestvideo+bestaudio/best':
+                final_fmt = f"{fmt}+bestaudio/best"
+                
             ydl_opts = {
                 'format': final_fmt,
                 'outtmpl': out_tmpl,
                 'quiet': True,
                 'noplaylist': True,
-                'merge_output_format': 'mkv', # Ensure container can hold streams
-                # Added from Termux Code: Speed boost
-                'concurrent_fragment_downloads': 4,
-                # Fix for Sign In Error
-                'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-                'http_headers': {
-                     'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                },
-                'nocheckcertificate': True,
+                'merge_output_format': 'mkv' # Ensure container can hold streams
             }
 
         # Progress hook for cancellation
